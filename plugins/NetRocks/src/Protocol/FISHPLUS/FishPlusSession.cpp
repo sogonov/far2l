@@ -98,9 +98,13 @@ namespace FishPlus
 	// filename intact. UNC "\\srv\share" is folded to "//srv/share".
 	static std::string NormalizeWirePath(const std::string &p)
 	{
-		if (p.size() >= 3 && (p[0] == '\\' || p[0] == '/')
+		if (p.size() >= 3 && (p[0] == '\\' || p[1] == '\\')
+			&& (p[0] == '\\' || p[0] == '/')
 			&& (p[1] == '\\' || p[1] == '/')) {
-			// UNC "\\srv\share\rest" -> "//srv/share/rest".
+			// UNC "\\srv\share\rest" -> "//srv/share/rest". A leading "//"
+			// with no backslash in it is already POSIX shape, so it must not
+			// come here: rewriting it would turn a backslash that is a legal
+			// character in a POSIX filename into a separator.
 			std::string out("//");
 			for (size_t i = 2; i < p.size(); ++i) {
 				out+= (p[i] == '\\') ? '/' : p[i];
@@ -114,26 +118,31 @@ namespace FishPlus
 			out.reserve(p.size() + 1);
 			out+= '/';
 			out+= (char)tolower((unsigned char)p[0]);
-			if (p.size() >= 3 && (p[2] == '\\' || p[2] == '/')) {
-				out+= '/';
-				for (size_t i = 3; i < p.size(); ++i) {
-					out+= (p[i] == '\\') ? '/' : p[i];
-				}
-			} else {
-				// "X:relative" - no separator; leave the tail to the far
-				// side. A path shape the panel is unlikely to produce.
-				for (size_t i = 2; i < p.size(); ++i) {
-					out+= (p[i] == '\\') ? '/' : p[i];
-				}
+			if (p.size() < 3 || (p[2] != '\\' && p[2] != '/')) {
+				// "X:relative" means "relative to the current directory on
+				// drive X", a per-drive cwd this client does not track and
+				// cannot expand. Folding it to "/x/relative" would name a
+				// different file, and dropping the separator names none at
+				// all, so it goes on the wire as typed and the helper answers
+				// with the exact bytes the user gave it.
+				return p;
+			}
+			out+= '/';
+			for (size_t i = 3; i < p.size(); ++i) {
+				out+= (p[i] == '\\') ? '/' : p[i];
 			}
 			return out;
 		}
 		return p;
 	}
 
-	std::string Session::EncodePathLine(const std::string &path)
+	std::string Session::EncodePathLine(const std::string &path) const
 	{
-		const std::string norm = NormalizeWirePath(path);
+		// Only a PowerShell peer speaks in Windows-shape paths. A POSIX peer
+		// gets the path untouched: backslash and colon are ordinary filename
+		// characters there, and folding them would silently rename the target.
+		const std::string norm = (_feats.Flavor() == "pwsh")
+			? NormalizeWirePath(path) : path;
 		bool needs_escape = norm.empty() || norm[0] == '~';
 		if (!needs_escape) {
 			needs_escape = (norm.find('\n') != std::string::npos

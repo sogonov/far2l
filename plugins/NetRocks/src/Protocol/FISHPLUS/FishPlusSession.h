@@ -151,8 +151,10 @@ namespace FishPlus
 		void MarkBroken() { _broken = true; }
 
 		// Renders a path as one protocol line, escaping it only when a raw line
-		// would not survive the round trip.
-		static std::string EncodePathLine(const std::string &path);
+		// would not survive the round trip. Not static: a Windows-shape path is
+		// folded to POSIX shape only when the negotiated helper is the
+		// PowerShell one, which takes reading _feats.
+		std::string EncodePathLine(const std::string &path) const;
 
 		Response Exec(const char *cmd, const std::vector<std::string> &args = {});
 		Response ExecPath(const char *cmd, const std::string &path,
