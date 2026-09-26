@@ -296,6 +296,20 @@ bool ProtocolFISHPLUS::LooksLikeWrongFlavor(const std::exception &e)
 	//   where a wrong-flavor helper still manages to print a number that
 	//   is not ours; kept in the list for symmetry.
 	//
+	// A shell that dies mid-handshake is reported by the transport in one of
+	// three wordings, and which one arrives is a matter of what poll() noticed
+	// first, not of what went wrong:
+	//
+	//   "pty disrupted"      - POLLERR/POLLHUP on the master or stderr fd.
+	//   "error reading pty"  - POLLIN was set, then read() returned 0 at EOF.
+	//   "pty write error"    - the far side went away while we were writing.
+	//
+	// All three mean the same thing here: the peer's shell could not digest
+	// the bootstrap we chose. Listing only the first made the fallback fire
+	// or not fire depending on timing, which is how a Windows peer reached
+	// through way [SSH] could fail outright on one run and probe through on
+	// the next.
+	//
 	// A working helper that answers with a real diagnostic (permission
 	// denied on the tempdir, missing dependency, etc.) never carries any
 	// of these phrases, so a real failure still bubbles up as itself.
@@ -309,6 +323,8 @@ bool ProtocolFISHPLUS::LooksLikeWrongFlavor(const std::exception &e)
 		"unexpected handshake banner",
 		"unsupported protocol version",
 		"pty disrupted",
+		"error reading pty",
+		"pty write error",
 	};
 	for (const char *p : phrases) {
 		if (strstr(msg, p) != nullptr) {
