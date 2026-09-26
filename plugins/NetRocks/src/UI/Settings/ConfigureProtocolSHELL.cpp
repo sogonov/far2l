@@ -161,10 +161,12 @@ public:
 
 		// The flavor is not a way-specific option like the OPTs are - a
 		// Windows peer may be reached by any way that arrives at a PowerShell
-		// prompt - so it gets its own row. A way that already declares where
-		// it arrives leaves nothing to choose: Auto and that flavor mean the
-		// same thing, and the other one cannot work. Such a way gets no row
-		// at all, and Configure() stores Auto for it.
+		// prompt - so it gets its own row. What the row offers depends on what
+		// the way declares. A way that lands in PowerShell leaves nothing to
+		// choose, since Auto means the same thing there and POSIX cannot work:
+		// it gets no row at all and Configure() stores Auto for it. A way that
+		// lands in a POSIX shell keeps Auto - that is what lets the probe jump
+		// away to a PowerShell way - and only drops PowerShell from the list.
 		if (_include_flavor && cfg.flavor != "pwsh") {
 			_di.NextLine();
 			_di.AddAtLine(DI_TEXT, 4,49, DIF_BOXCOLOR | DIF_SEPARATOR);

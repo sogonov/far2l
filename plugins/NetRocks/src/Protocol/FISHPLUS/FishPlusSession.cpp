@@ -90,12 +90,14 @@ namespace FishPlus
 	// The wire expects POSIX-shape paths ("/c/Users/foo",
 	// "//srv/share/rest"), but a Windows user's muscle memory produces
 	// "C:\Users\foo" and the site config's Directory field takes that
-	// verbatim. Fold Windows-shape to POSIX-shape once here so the helper
-	// never has to guess and the callers do not have to think about it.
+	// verbatim. Fold Windows-shape to POSIX-shape here so the helper never
+	// has to guess. EncodePathLine calls this only for a pwsh peer: on a
+	// POSIX one the very same characters are ordinary filename bytes.
 	//
 	// Only the leading drive letter and separator swap need touching; the
 	// rest is byte-for-byte the same, which keeps every locale-shaped
-	// filename intact. UNC "\\srv\share" is folded to "//srv/share".
+	// filename intact. UNC "\\srv\share" is folded to "//srv/share";
+	// "X:relative" is passed through, for the reason given at that branch.
 	static std::string NormalizeWirePath(const std::string &p)
 	{
 		if (p.size() >= 3 && (p[0] == '\\' || p[1] == '\\')
