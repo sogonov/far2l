@@ -1,14 +1,16 @@
 # Where helper.sh and helper.ps1 come from, and how to update them
 
-Both helpers in this directory are **byte-for-byte copies** from f4:
+`helper.ps1` in this directory is a **byte-for-byte copy** from f4. `helper.sh`
+is a copy plus one mechanical delta, described under **Local delta** below and
+re-applied by `sync-from-f4.sh` on every refresh:
 
 | File | Upstream | Path | Commit | License |
 |---|---|---|---|---|
 | `helper.sh`  | https://github.com/unxed/f4 | `plugins/netfox/fishplus/helper.sh`  | `5fee8a6c` (missing `info` target reported as `no such file or directory`) | BSD-3-Clause (see the f4 repository) |
 | `helper.ps1` | https://github.com/unxed/f4 | `plugins/netfox/fishplus/helper.ps1` | `a2b69c8d` (fix POSIX paths in pwsh background job runspaces on Unix) | BSD-3-Clause (see the f4 repository) |
 
-They are deliberately **not** edited here, not even to remove the parts NetRocks
-does not call yet. f4 is where the protocol is developed, and every local edit
+Apart from that delta they are deliberately **not** edited here, not even to
+remove the parts NetRocks does not call yet. f4 is where the protocol is developed, and every local edit
 would have to be re-applied by hand on every refresh. Keeping the files
 identical makes an update a copy plus a version bump.
 
@@ -21,6 +23,38 @@ delivers them (see `../FishPlusScript.cpp`, `BootstrapLine()` vs
 The only thing done to either at runtime is what f4 does too: the literal
 `__F4_TOKEN__` is replaced with the per-session token, and comments and blank
 lines are stripped before upload (`FishPlusScript.cpp`, `Compact()`).
+
+## Local delta
+
+`helper.sh` prints its protocol lines with `echo "..."` in eleven places. A
+POSIX `sh` builtin `echo` interprets backslash escapes with no opt-in - it is
+`dash` on Debian and Ubuntu, so this is the common case - and a filename is
+allowed to contain a backslash. On such a peer:
+
+```sh
+$ dash -c 'V="weird\name.txt"; echo "$V"'
+weird
+ame.txt
+```
+
+The worst of the eleven is `f4_end`, which prints the response terminator: it
+is called as `f4_end err "$(f4_flat "$F4OUT")"`, and `f4_flat` folds real
+`\n\r\t` to spaces but leaves a backslash alone. So a file named
+`weird\name.txt` splits the terminator itself in two, and the client loses
+stream sync rather than merely mis-parsing one reply. Reproduced against a
+Linux peer: `enum` listed the name correctly while `info` on it answered
+`stat failed (2)`.
+
+The delta replaces every `echo "<text with a substitution>"` that writes to the
+protocol stream with `printf '%s\n' "<same text>"`, which is what upstream
+already does in ten other places in the same file - the eleven are an
+oversight, not a style. One `echo` writing to stderr (`>&2`) is left alone, and
+so are the ones printing a bare literal.
+
+`sync-from-f4.sh` re-applies this after copying, so a refresh cannot silently
+drop it, and reports how many sites it touched. **When that count comes out
+zero, upstream has taken the fix**: drop the delta from the script, and this
+section with it. Upstream tracking: <https://github.com/unxed/f4/issues>
 
 ## Updating
 
