@@ -42,8 +42,16 @@ is called as `f4_end err "$(f4_flat "$F4OUT")"`, and `f4_flat` folds real
 `\n\r\t` to spaces but leaves a backslash alone. So a file named
 `weird\name.txt` splits the terminator itself in two, and the client loses
 stream sync rather than merely mis-parsing one reply. Reproduced against a
-Linux peer: `enum` listed the name correctly while `info` on it answered
-`stat failed (2)`.
+Linux peer holding `/tmp/weird\name.txt`: `enum` listed it correctly, since
+`find` prints the name itself, while the reply to `info` arrived split over
+two lines -
+
+```
+f f 0 ... 664 1000 1000 weird
+ame.txt
+```
+
+- which is not a record the client can read.
 
 The delta replaces every `echo "<text with a substitution>"` that writes to the
 protocol stream with `printf '%s\n' "<same text>"`, which is what upstream
