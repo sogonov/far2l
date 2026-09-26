@@ -357,6 +357,23 @@ void ProtocolFISHPLUS::AttemptFlavor(bool pwsh)
 	}
 }
 
+std::string ProtocolFISHPLUS::WayFlavor(const std::string &way_name)
+{
+	WayToShellConfig cfg(FISHPLUS_WAYS_INI, way_name);
+	return cfg.flavor;
+}
+
+std::string ProtocolFISHPLUS::FindPwshWay()
+{
+	WaysToShell all_ways(FISHPLUS_WAYS_INI);
+	for (const auto &n : all_ways) {
+		if (WayFlavor(n) == "pwsh") {
+			return n;
+		}
+	}
+	return std::string();
+}
+
 void ProtocolFISHPLUS::Initialize()
 {
 	_way_name = _protocol_options.GetString("Way");
@@ -376,16 +393,17 @@ void ProtocolFISHPLUS::Initialize()
 	fprintf(stderr, "[FISH+] INITIALIZE: '%s', flavor '%s'\n",
 		_way_name.c_str(), _flavor.c_str());
 
+	const std::string way_flavor = WayFlavor(_way_name);
 	if (_flavor == "posix") {
 		AttemptFlavor(false);
 	} else if (_flavor == "pwsh") {
 		AttemptFlavor(true);
-	} else if (_way_name == "SSH_PWSH") {
-		// The way name itself declares the peer is PowerShell; probing
-		// POSIX first would just hang waiting for a ready marker no
-		// PowerShell peer will ever emit, since PowerShell reads the
-		// POSIX bootstrap as garbage without producing a diagnostic
-		// that would trip WaitReply's error path.
+	} else if (way_flavor == "pwsh") {
+		// The way declares it arrives at a PowerShell host; probing POSIX
+		// first would just hang waiting for a ready marker no PowerShell
+		// peer will ever emit, since PowerShell reads the POSIX bootstrap
+		// as garbage without producing a diagnostic that would trip
+		// WaitReply's error path.
 		AttemptFlavor(true);
 	} else {
 		// Auto: POSIX first (the common case), pwsh on the specific
@@ -409,21 +427,17 @@ void ProtocolFISHPLUS::Initialize()
 				// before either helper flavor gets a chance). If a
 				// PowerShell-oriented way exists and we are not already
 				// on it, jump there and try once more.
-				if (!LooksLikeWrongFlavor(e2) || _way_name == "SSH_PWSH") {
+				if (!LooksLikeWrongFlavor(e2) || way_flavor == "pwsh") {
 					throw;
 				}
-				WaysToShell all_ways(FISHPLUS_WAYS_INI);
-				bool has_ssh_pwsh = false;
-				for (const auto &n : all_ways) {
-					if (n == "SSH_PWSH") { has_ssh_pwsh = true; break; }
-				}
-				if (!has_ssh_pwsh) {
+				const std::string pwsh_way = FindPwshWay();
+				if (pwsh_way.empty()) {
 					throw;
 				}
 				fprintf(stderr, "[FISH+] way '%s' also failed as '%s';"
-					" retrying via way 'SSH_PWSH'\n",
-					_way_name.c_str(), e2.what());
-				_way_name = "SSH_PWSH";
+					" retrying via way '%s'\n",
+					_way_name.c_str(), e2.what(), pwsh_way.c_str());
+				_way_name = pwsh_way;
 				AttemptFlavor(true);
 			}
 		}

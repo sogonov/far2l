@@ -47,22 +47,39 @@ class ProtocolOptionsSHELL : protected BaseDialog
 	};
 	std::list<Option> _opts;
 
-	// Flavor list positions map to protocol-option string values written
-	// into the site config; ProtocolFISHPLUS reads them back verbatim in
-	// Initialize().
-	static const char *FlavorAt(int pos)
+	// The flavors on offer for the current way, in list order. A way that
+	// declares which shell it arrives at gets a shortened list - offering a
+	// helper the way cannot run only invites a connect that cannot work - so
+	// list positions are not fixed and the values are kept alongside rather
+	// than recomputed from an index. ProtocolFISHPLUS reads these strings
+	// back verbatim in Initialize().
+	std::vector<const char *> _flavor_values;
+
+	void BuildFlavorList(const std::string &way_flavor, const std::string &current)
 	{
-		switch (pos) {
-			case 1:  return "posix";
-			case 2:  return "pwsh";
-			default: return "auto";
+		_flavor_values.clear();
+		_di_flavor.Add(MFISHPLUSHelperFlavorAuto);
+		_flavor_values.emplace_back("auto");
+		if (way_flavor != "pwsh") {
+			_di_flavor.Add(MFISHPLUSHelperFlavorPosix);
+			_flavor_values.emplace_back("posix");
 		}
-	}
-	static int FlavorIndex(const std::string &value)
-	{
-		if (value == "posix") return 1;
-		if (value == "pwsh")  return 2;
-		return 0;
+		if (way_flavor != "posix") {
+			_di_flavor.Add(MFISHPLUSHelperFlavorPwsh);
+			_flavor_values.emplace_back("pwsh");
+		}
+		// A value carried over from another way may not be on offer here; the
+		// site then falls back to Auto rather than keeping a setting the way
+		// cannot honor. This is what used to let Flavor=PowerShell survive a
+		// switch to a POSIX-only way and produce a connect that never worked.
+		size_t sel = 0;
+		for (size_t i = 0; i < _flavor_values.size(); ++i) {
+			if (current == _flavor_values[i]) {
+				sel = i;
+				break;
+			}
+		}
+		_di_flavor.SelectIndex(sel);
 	}
 
 	virtual LONG_PTR DlgProc(int msg, int param1, LONG_PTR param2)
@@ -142,20 +159,19 @@ public:
 			InitializeOption(opt, value);
 		}
 
-		if (_include_flavor) {
-			// The flavor is a protocol-wide axis, not a way-specific one:
-			// a Windows peer may be reached via any way that arrives at a
-			// PowerShell prompt, so it deserves its own row rather than
-			// being lumped in with the current way's OPTs.
+		// The flavor is not a way-specific option like the OPTs are - a
+		// Windows peer may be reached by any way that arrives at a PowerShell
+		// prompt - so it gets its own row. A way that already declares where
+		// it arrives leaves nothing to choose: Auto and that flavor mean the
+		// same thing, and the other one cannot work. Such a way gets no row
+		// at all, and Configure() stores Auto for it.
+		if (_include_flavor && cfg.flavor != "pwsh") {
 			_di.NextLine();
 			_di.AddAtLine(DI_TEXT, 4,49, DIF_BOXCOLOR | DIF_SEPARATOR);
 
 			_di.NextLine();
 			_di.AddAtLine(DI_TEXT, 5, 34, 0, MFISHPLUSHelperFlavor);
-			_di_flavor.Add(MFISHPLUSHelperFlavorAuto);
-			_di_flavor.Add(MFISHPLUSHelperFlavorPosix);
-			_di_flavor.Add(MFISHPLUSHelperFlavorPwsh);
-			_di_flavor.SelectIndex(FlavorIndex(_sc.GetString("Flavor")));
+			BuildFlavorList(cfg.flavor, _sc.GetString("Flavor"));
 			_i_flavor = _di.AddAtLine(DI_COMBOBOX, 35, 53,
 				DIF_DROPDOWNLIST | DIF_LISTAUTOHIGHLIGHT | DIF_LISTNOAMPERSAND, "");
 			_di[_i_flavor].ListItems = _di_flavor.Get();
@@ -188,8 +204,11 @@ public:
 				}
 				++i;
 			}
-			if (_include_flavor && _i_flavor >= 0) {
-				_sc.SetString("Flavor", FlavorAt(GetDialogListPosition(_i_flavor)));
+			if (_include_flavor) {
+				const int pos = (_i_flavor >= 0) ? GetDialogListPosition(_i_flavor) : -1;
+				_sc.SetString("Flavor",
+					(pos >= 0 && size_t(pos) < _flavor_values.size())
+						? _flavor_values[pos] : "auto");
 			}
 		}
 		return r == _i_way;
