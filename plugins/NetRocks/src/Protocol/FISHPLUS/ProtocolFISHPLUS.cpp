@@ -427,9 +427,12 @@ void ProtocolFISHPLUS::Initialize()
 				// before either helper flavor gets a chance). If a
 				// PowerShell-oriented way exists and we are not already
 				// on it, jump there and try once more.
-				if (!LooksLikeWrongFlavor(e2) || way_flavor == "pwsh") {
+				if (!LooksLikeWrongFlavor(e2)) {
 					throw;
 				}
+				// Whatever this finds is a different way: we only got
+				// here because the current one does not declare pwsh,
+				// so there is no way to jump onto ourselves.
 				const std::string pwsh_way = FindPwshWay();
 				if (pwsh_way.empty()) {
 					throw;
