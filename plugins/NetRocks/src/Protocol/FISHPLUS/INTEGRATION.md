@@ -288,26 +288,49 @@ Three pieces make this work:
   thin shim so no existing caller changes.
 - **The flavor probe.** `ProtocolFISHPLUS::Initialize()` reads the `Flavor`
   protocol option (`auto` by default; `posix` or `pwsh` skip the probe).
-  Auto tries the POSIX bootstrap first, and on the four handshake failures a
-  wrong-flavor probe produces (never got the ready marker, unexpected banner,
-  handshake refused by remote host, unsupported protocol version) tears the
-  transport down and retries with the pwsh bootstrap. Any error that does not
-  look like a flavor mismatch propagates as itself. The retry costs a fresh
-  ssh login because `WayToShell` owns the ssh child; on peers with
-  `ControlMaster` set up this is one round trip, not a re-authentication.
+  Auto tries the POSIX bootstrap first, and on a handshake failure that a
+  wrong-flavor probe would produce tears the transport down and retries with
+  the pwsh bootstrap. Those failures come in two groups: the helper answered
+  but wrongly (never got the ready marker, unexpected banner, handshake
+  refused by remote host, unsupported protocol version), or the peer's shell
+  died outright, which `WayToShell` words as `pty disrupted`, `error reading
+  pty` or `pty write error` depending on what `poll()` noticed first rather
+  than on what happened - all three have to be recognized, or the probe fires
+  only on lucky timing. Any error that does not look like a flavor mismatch
+  propagates as itself. The retry costs a fresh ssh login because
+  `WayToShell` owns the ssh child; on peers with `ControlMaster` set up this
+  is one round trip, not a re-authentication.
+- **Which way to jump to.** A way says in `ways.ini` which shell it arrives
+  at - `Flavor=posix` for `[SSH]`, `Flavor=pwsh` for `[SSH_PWSH]` - and the
+  probe looks for the first way declaring `pwsh` rather than matching the
+  name `SSH_PWSH`. A hand-written way that ends at a PowerShell host joins in
+  by declaring the same thing. A way that says nothing is treated as unknown,
+  which is the case for `[SERIAL]`.
 
-`ways.ini` gains an `[SSH_PWSH]` section whose `OPT1` picks between two
-launch chains that cover the two `DefaultShell` configurations. Users who
-know their peer can select it directly; the auto probe means the plain
-`[SSH]` way also works against a Windows host, at the cost of one wasted
-POSIX handshake per connect.
+`ways.ini` gains an `[SSH_PWSH]` section reaching an interactive PowerShell
+over ssh. Users who know their peer can select it directly; the auto probe
+means the plain `[SSH]` way also works against a Windows host, at the cost of
+one wasted POSIX handshake per connect - two, in fact, since `[SSH]` runs
+`exec sh` under `cmd.exe` and dies whichever bootstrap it is given, so only
+the jump can succeed there.
+
+Because a way declares its flavor, the site options dialog can stop offering
+a helper the way cannot run: `[SSH]` offers Auto and POSIX, `[SSH_PWSH]` gets
+no flavor row at all (Auto already means pwsh there), and a way that declares
+nothing keeps all three. A value carried over from another way that is not on
+offer falls back to Auto rather than persisting into a connect that cannot
+work.
 
 Wire paths from a pwsh peer use POSIX-shape (`/c/Users/Foo`) so nothing in
 `FishPlusListing.cpp` needs to change - `BaseName()` and `FinishName()` split
 on `/` alone. The helper announces `flavor:pwsh` in its banner, which
-`Features::Flavor()` exposes; today no code branches on the flavor, but the
-tag is there for future callers that might need to key path translation or a
-peer-specific quoting rule on it.
+`Features::Flavor()` exposes, and `Session::EncodePathLine` keys on it: a
+Windows-shape path typed by the user (`C:\Users\Foo`, `\\srv\share\rest`) is
+folded to POSIX shape before it goes out, but only towards a pwsh peer. A
+POSIX peer gets the path untouched, because backslash and colon are ordinary
+filename characters there and folding them would silently name a different
+file. `X:relative` is left alone in both cases: it means "relative to the
+current directory on drive X", a per-drive cwd this client does not track.
 
 What this does **not** ship:
 
