@@ -54,7 +54,7 @@ so are the ones printing a bare literal.
 `sync-from-f4.sh` re-applies this after copying, so a refresh cannot silently
 drop it, and reports how many sites it touched. **When that count comes out
 zero, upstream has taken the fix**: drop the delta from the script, and this
-section with it. Upstream tracking: <https://github.com/unxed/f4/issues>
+section with it. Upstream tracking: <https://github.com/unxed/f4/issues/1478>
 
 ## Updating
 
